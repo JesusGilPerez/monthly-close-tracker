@@ -2,7 +2,7 @@
 
 A single-page tool to run a recurring monthly process. It shows which tasks can be started today, which are blocked and why, and what each task unlocks once it is done. Every task carries its own step-by-step guide, so the tracker doubles as the process manual.
 
-**[Live demo](https://YOUR-USERNAME.github.io/monthly-close-tracker/)**. The content is fictitious: the month-end close of an invented company, Alder & Finch Ltd.
+**[Live demo](https://jesusgilperez.github.io/monthly-close-tracker/)**. The content is fictitious: the month-end close of an invented company, Alder & Finch Ltd.
 
 ![Screenshot of the tracker](screenshot.png)
 
