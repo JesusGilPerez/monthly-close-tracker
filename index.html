@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monthly close tracker</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗓️</text></svg>">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #EDF1F4;
+    --surface: #FFFFFF;
+    --sunk: #F5F7F9;
+    --ink: #18263A;
+    --muted: #5B6878;
+    --line: #C9D2DC;
+    --accent: #1F5F8B;
+    --accent-ink: #FFFFFF;
+    --accent-bg: #E1ECF5;
+    --ok: #2F7D5B;   --ok-bg: #E3F2EA;
+    --warn: #8A5A00; --warn-bg: #FFF2D6;
+    --lock: #6B7686; --lock-bg: #E6EAEF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #141B24;
+      --surface: #1C2531;
+      --sunk: #18202B;
+      --ink: #E4EAF1;
+      --muted: #9AA8B8;
+      --line: #334152;
+      --accent: #7DB4DE;
+      --accent-ink: #10202E;
+      --accent-bg: #1D3245;
+      --ok: #6CC39A;   --ok-bg: #183326;
+      --warn: #E3B45A; --warn-bg: #3A2E14;
+      --lock: #8D99A8; --lock-bg: #252F3C;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: Bahnschrift, "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 15px; line-height: 1.45;
+  }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 0 20px; }
+  header { padding: 24px 0 8px; display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-end; justify-content: space-between; }
+  h1 { font-size: 1.7rem; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 2px 0 0; }
+  .cycle { display: flex; align-items: center; gap: 10px; }
+  .cycle label { color: var(--muted); }
+  input, select, textarea, button { font: inherit; color: var(--ink); }
+  input, textarea {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px;
+  }
+  button {
+    cursor: pointer; background: var(--accent); color: var(--accent-ink);
+    border: 1px solid var(--accent); border-radius: 4px; padding: 7px 14px;
+  }
+  button.quiet { background: transparent; color: var(--accent); }
+  button.small { padding: 3px 9px; font-size: 0.85rem; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .progress { display: flex; gap: 24px; flex-wrap: wrap; margin: 6px 0 4px; }
+  .bar { min-width: 180px; }
+  .bar .t { font-size: 0.85rem; color: var(--muted); display: flex; justify-content: space-between; gap: 12px; }
+  .bar .track { height: 6px; background: var(--lock-bg); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .bar .track i { display: block; height: 100%; background: var(--ok); }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+  h2 { font-size: 1.05rem; font-weight: 600; margin: 0 0 10px; }
+
+  #waits { padding: 14px 18px; margin: 14px 0; }
+  #waits .list { display: flex; flex-wrap: wrap; gap: 8px 10px; }
+  .wait {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    border: 1px solid var(--line); border-radius: 18px; background: var(--sunk); cursor: pointer;
+  }
+  .wait.on { background: var(--ok-bg); border-color: var(--ok); }
+  .wait input { margin: 0; }
+  .wait small { color: var(--muted); }
+
+  .body { display: grid; grid-template-columns: minmax(320px, 440px) 1fr; gap: 16px; align-items: start; margin-bottom: 20px; }
+  @media (max-width: 900px) { .body { grid-template-columns: 1fr; } }
+
+  #list { padding: 12px 0 6px; }
+  .filters { display: flex; gap: 4px; padding: 0 12px 10px; flex-wrap: wrap; }
+  .filters button { background: transparent; color: var(--muted); border-color: transparent; padding: 4px 10px; border-radius: 14px; }
+  .filters button[aria-pressed="true"] { background: var(--accent-bg); color: var(--ink); border-color: var(--line); }
+  .group h3 { font-size: 0.9rem; font-weight: 600; color: var(--muted); margin: 10px 16px 4px; display: flex; justify-content: space-between; }
+  .item {
+    display: grid; grid-template-columns: 42px 1fr auto; gap: 2px 10px; align-items: start;
+    width: 100%; text-align: left; background: transparent; color: var(--ink);
+    border: 0; border-left: 4px solid transparent; border-radius: 0; padding: 8px 14px 8px 12px;
+  }
+  .item:hover { background: var(--sunk); }
+  .item[aria-current="true"] { background: var(--accent-bg); border-left-color: var(--accent); }
+  .item .id { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.85rem; padding-top: 2px; }
+  .item .name { font-weight: 500; }
+  .item .reason { grid-column: 2 / 4; color: var(--muted); font-size: 0.82rem; }
+  .item.done .name { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.78rem; white-space: nowrap; }
+  .chip.done { background: var(--ok-bg); color: var(--ok); }
+  .chip.available { background: var(--accent-bg); color: var(--accent); }
+  .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  .chip.blocked { background: var(--lock-bg); color: var(--lock); }
+  .empty { color: var(--muted); padding: 12px 16px; }
+
+  #detail { padding: 20px 24px 24px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+  #detail .head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  #detail .head h2 { font-size: 1.35rem; margin: 0; }
+  #detail .head .id { color: var(--muted); }
+  .meta { color: var(--muted); font-size: 0.88rem; margin: 4px 0 12px; }
+  .actions-box { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 14px; background: var(--sunk); border-radius: 6px; margin: 12px 0 6px; }
+  .actions-box label { color: var(--muted); font-size: 0.88rem; }
+  .reasons { margin: 8px 0 0; padding-left: 18px; }
+  .reasons li { margin: 2px 0; }
+  .reasons li.warn { color: var(--warn); }
+  .section { margin-top: 20px; }
+  .section h3 { font-size: 0.95rem; font-weight: 600; margin: 0 0 6px; }
+  .summary { max-width: 75ch; margin: 0; }
+  ol.steps { padding-left: 22px; margin: 0; max-width: 78ch; }
+  ol.steps li { margin: 6px 0; padding-left: 4px; }
+  ul.watch { padding-left: 18px; margin: 0; max-width: 78ch; }
+  ul.watch li { margin: 5px 0; }
+  .related { display: flex; flex-wrap: wrap; gap: 6px; }
+  .related button { background: var(--sunk); color: var(--ink); border-color: var(--line); padding: 3px 9px; font-size: 0.85rem; }
+  .resource { display: flex; gap: 8px; align-items: baseline; margin: 4px 0; flex-wrap: wrap; }
+  .resource code { font-family: Consolas, "Courier New", monospace; font-size: 0.8rem; color: var(--muted); word-break: break-all; }
+  video { width: 100%; max-width: 760px; border-radius: 6px; background: #000; }
+  .note { width: 100%; max-width: 760px; }
+  .pending { color: var(--muted); font-style: italic; }
+
+  footer { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 6px 0 28px; }
+  footer .sep { flex: 1; }
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); max-width: min(680px, 92vw);
+    background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 6px; display: none; }
+  #toast.on { display: block; }
+  .error { padding: 24px; margin: 24px 0; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  /* ---------- Edición ---------- */
+  .mode { display: flex; gap: 8px; align-items: center; }
+  body.editing header h1::after { content: " (editing)"; color: var(--warn); font-weight: 500; font-size: 1rem; }
+  #contentNotices:empty { display: none; }
+  .notice { padding: 12px 16px; margin: 12px 0 0; border-radius: 6px; border: 1px solid var(--warn); background: var(--warn-bg); color: var(--ink); }
+  .notice p { margin: 0 0 8px; }
+  .notice ul { margin: 4px 0 8px; padding-left: 18px; }
+  .notice .notice-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .form { display: grid; gap: 14px; max-width: 820px; }
+  .field { display: grid; gap: 4px; }
+  .field > label, .field > .label { font-weight: 600; font-size: 0.9rem; }
+  .field .help { color: var(--muted); font-size: 0.82rem; }
+  .field input[type=text], .field input[type=number], .field textarea, .field select { width: 100%; }
+  .field select { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .checks { max-height: 190px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; background: var(--sunk); }
+  .checks label { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; font-size: 0.9rem; }
+  .checks .grp { color: var(--muted); font-size: 0.8rem; margin-top: 6px; }
+  .months { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .months label { display: flex; gap: 4px; align-items: center; font-size: 0.9rem; }
+  .field > button { justify-self: start; }
+  .wait-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 4px 0; align-items: center; }
+  .wait-row code { color: var(--muted); font-size: 0.78rem; }
+  .editbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 10px; }
+  .danger { color: #A8343A; border-color: #A8343A; background: transparent; }
+  @media (prefers-color-scheme: dark) { .danger { color: #EE8A8A; border-color: #EE8A8A; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1 id="title">Monthly close tracker</h1>
+      <p class="sub" id="subtitle"></p>
+    </div>
+    <div class="mode">
+      <div class="cycle" id="cyclePicker">
+        <label for="month">Cycle</label>
+        <input type="month" id="month">
+        <button type="button" class="quiet small" id="thisMonth">This month</button>
+      </div>
+      <button type="button" class="quiet small" id="btnEdit">Edit content</button>
+    </div>
+  </header>
+  <div id="contentNotices"></div>
+  <div class="progress" id="progress"></div>
+
+  <section class="panel" id="waits" aria-labelledby="h-waits">
+    <h2 id="h-waits">Waiting on others</h2>
+    <div class="list" id="waitList"></div>
+  </section>
+
+  <div class="body">
+    <section class="panel" id="list" aria-label="Tasks">
+      <div class="filters" id="filters" role="group" aria-label="Filter tasks">
+        <button type="button" data-f="todo" aria-pressed="true">To do</button>
+        <button type="button" data-f="available" aria-pressed="false">Available</button>
+        <button type="button" data-f="done" aria-pressed="false">Done</button>
+        <button type="button" data-f="all" aria-pressed="false">All</button>
+      </div>
+      <div class="editbar" id="editbar" hidden>
+        <button type="button" class="small" id="btnNew">Add task</button>
+        <button type="button" class="quiet small" id="btnSettings">Settings and waits</button>
+      </div>
+      <div id="groups"></div>
+    </section>
+    <section class="panel" id="detail" aria-live="polite"></section>
+  </div>
+
+  <footer>
+    <button type="button" class="quiet small" id="expJson">Save backup</button>
+    <button type="button" class="quiet small" id="impJson">Restore backup</button>
+    <input type="file" id="file" accept=".json,application/json" hidden>
+    <button type="button" class="quiet small" id="expCsv">Export log (CSV)</button>
+    <span class="sep"></span>
+    <button type="button" class="quiet small" id="clearCycle">Clear this cycle</button>
+  </footer>
+</div>
+<div id="toast" role="status"></div>
+
+<script src="tasks.js"></script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const FROM_FILE = window.TRACKER;
+  if (!FROM_FILE || !Array.isArray(FROM_FILE.tasks)) {
+    document.querySelector('.wrap').innerHTML =
+      '<section class="panel error"><h2>tasks.js could not be read</h2>' +
+      '<p>Check that tasks.js sits in the same folder as this file. If someone edited it by hand, look at the last change: a missing comma or quote is the usual cause. If you have a previous copy of tasks.js, restore it.</p></section>';
+    return;
+  }
+
+  // ======================= Data and storage =======================
+  const LS = 'monthlyCloseTracker.v1';
+  const LS_DRAFT = 'monthlyCloseTracker.draft';
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const STATUS_NAME = { done: 'Done', available: 'Available', warn: 'Available', blocked: 'Blocked' };
+  const FREQ_NAME = { monthly: 'Monthly', quarterly: 'Quarterly', yearEnd: 'Year-end' };
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const pad = n => String(n).padStart(2, '0');
+  const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+  const currentMonth = () => todayISO().slice(0, 7);
+  const fmtDate = iso => iso ? (+iso.slice(8, 10)) + ' ' + MONTHS[+iso.slice(5, 7) - 1].slice(0, 3) + ' ' + iso.slice(0, 4) : '';
+
+  const ORIGINAL = JSON.stringify(clone(FROM_FILE));
+  let CFG = clone(FROM_FILE);
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_DRAFT));
+    if (d && Array.isArray(d.tasks)) { if (JSON.stringify(d) === ORIGINAL) localStorage.removeItem(LS_DRAFT); else CFG = d; }
+  } catch (e) { /* no draft */ }
+  const hasDraft = () => JSON.stringify(CFG) !== ORIGINAL;
+
+  let byId = {}, waitById = {};
+  function reindex() {
+    byId = Object.fromEntries(CFG.tasks.map(t => [t.id, t]));
+    waitById = Object.fromEntries((CFG.waits || []).map(w => [w.id, w]));
+  }
+  reindex();
+
+  let state = { cycles: {} };
+  try { const s = JSON.parse(localStorage.getItem(LS)); if (s && s.cycles) state = s; } catch (e) { /* no saved progress */ }
+  const save = () => { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) { toast('Could not save in this browser. Download a backup.'); } };
+  function saveDraft() {
+    try { if (hasDraft()) localStorage.setItem(LS_DRAFT, JSON.stringify(CFG)); else localStorage.removeItem(LS_DRAFT); } catch (e) { /* no storage */ }
+  }
+
+  let cycleId = currentMonth();
+  let filter = 'todo';
+  let selected = null;
+  let editing = false;
+
+  // ============================ Logic ============================
+  function cycle() {
+    if (!state.cycles[cycleId]) state.cycles[cycleId] = { done: {}, waits: {}, notes: {} };
+    const c = state.cycles[cycleId];
+    c.done = c.done || {}; c.waits = c.waits || {}; c.notes = c.notes || {};
+    return c;
+  }
+  function applies(t) {
+    const m = +cycleId.slice(5, 7);
+    if (t.frequency === 'quarterly') return (CFG.quarterlyMonths || []).includes(m);
+    if (t.frequency === 'yearEnd') return (CFG.yearEndMonths || []).includes(m);
+    return true;
+  }
+  const cycleTasks = () => CFG.tasks.filter(applies);
+
+  function statusOf(t) {
+    const c = cycle();
+    if (c.done[t.id]) return { st: 'done', reasons: [], warnings: [] };
+    const reasons = [], warnings = [];
+    const now = currentMonth();
+    if (cycleId > now) reasons.push('This cycle is in the future');
+    else if (t.startDay && cycleId === now && new Date().getDate() < t.startDay) reasons.push('Available from day ' + t.startDay);
+    (t.dependsOn || []).forEach(d => {
+      const dt = byId[d];
+      if (dt && applies(dt) && !c.done[d]) reasons.push('Needs ' + d + ': ' + dt.name);
+    });
+    (t.waitsFor || []).forEach(w => {
+      if (!c.waits[w]) reasons.push('Waiting for: ' + (waitById[w] ? waitById[w].name : w));
+    });
+    (t.recommended || []).forEach(d => {
+      const dt = byId[d];
+      if (dt && applies(dt) && !c.done[d]) warnings.push('Better after ' + d + ': ' + dt.name);
+    });
+    return { st: reasons.length ? 'blocked' : (warnings.length ? 'warn' : 'available'), reasons, warnings };
+  }
+  const unlocks = id => CFG.tasks.filter(t => applies(t) && ((t.dependsOn || []).includes(id) || (t.recommended || []).includes(id)));
+
+  function cycleName(id) {
+    const y = +id.slice(0, 4), m = +id.slice(5, 7);
+    const pm = m === 1 ? 12 : m - 1, py = m === 1 ? y - 1 : y;
+    return MONTHS[m - 1] + ' ' + y + ' cycle (closing ' + MONTHS[pm - 1] + (py !== y ? ' ' + py : '') + ')';
+  }
+
+  // Content checks: ids, references and circular dependencies (depth-first search).
+  function validate(cfg) {
+    const p = [], ids = new Set();
+    const waits = new Set((cfg.waits || []).map(w => w.id));
+    const blocks = new Set((cfg.blocks || []).map(b => b.id));
+    cfg.tasks.forEach(t => {
+      if (!t.id) p.push('A task has no id.');
+      else if (ids.has(t.id)) p.push('Duplicate id: ' + t.id + '.');
+      ids.add(t.id);
+    });
+    cfg.tasks.forEach(t => {
+      if (!blocks.has(t.block)) p.push(t.id + ': unknown block “' + t.block + '”.');
+      if (!FREQ_NAME[t.frequency]) p.push(t.id + ': unknown frequency “' + t.frequency + '”.');
+      ['dependsOn', 'recommended'].forEach(k => (t[k] || []).forEach(d => {
+        if (d === t.id) p.push(t.id + ': depends on itself.');
+        else if (!ids.has(d)) p.push(t.id + ': depends on ' + d + ', which does not exist.');
+      }));
+      (t.waitsFor || []).forEach(w => { if (!waits.has(w)) p.push(t.id + ': waits for ' + w + ', which does not exist.'); });
+      if (t.startDay != null && !(Number.isInteger(t.startDay) && t.startDay >= 1 && t.startDay <= 31)) p.push(t.id + ': invalid start day.');
+    });
+    const g = Object.fromEntries(cfg.tasks.map(t => [t.id, (t.dependsOn || []).filter(d => ids.has(d) && d !== t.id)]));
+    const colour = {}; let loop = null;
+    const dfs = (u, path) => {
+      colour[u] = 1;
+      for (const v of g[u] || []) {
+        if (colour[v] === 1) { loop = path.slice(path.indexOf(v)).concat(v); return true; }
+        if (!colour[v] && dfs(v, path.concat(v))) return true;
+      }
+      colour[u] = 2; return false;
+    };
+    for (const id of Object.keys(g)) { if (!colour[id] && dfs(id, [id])) break; }
+    if (loop) p.push('Circular dependency: ' + loop.join(' → ') + '. None of these tasks can ever be unblocked.');
+    return p;
+  }
+
+  // ============================ Rendering ============================
+  function render() {
+    document.body.classList.toggle('editing', editing);
+    $('title').textContent = CFG.title || 'Monthly close tracker';
+    $('month').value = cycleId;
+    $('subtitle').textContent = editing ? 'Changes are kept in this browser until you download the new tasks.js.' : cycleName(cycleId);
+    $('btnEdit').textContent = editing ? 'Finish editing' : 'Edit content';
+    $('cyclePicker').hidden = editing;
+    $('waits').hidden = editing;
+    $('progress').hidden = editing;
+    $('filters').hidden = editing;
+    $('editbar').hidden = !editing;
+    renderNotices(); renderProgress(); renderWaits(); renderList(); renderDetail();
+  }
+
+  function renderNotices() {
+    const problems = validate(CFG);
+    let html = '';
+    if (hasDraft()) {
+      html += '<div class="notice"><p><strong>Some content changes exist only in this browser.</strong> To make them permanent, download the new tasks.js and replace the one next to index.html (if your browser saves it as “tasks (1).js”, rename it).</p>' +
+        '<div class="notice-actions"><button type="button" class="small" id="btnDownloadCfg">Download tasks.js</button>' +
+        '<button type="button" class="quiet small" id="btnDiscard">Discard changes</button></div></div>';
+    }
+    if (problems.length) {
+      html += '<div class="notice"><p><strong>The content has ' + problems.length + (problems.length === 1 ? ' problem' : ' problems') + ':</strong></p><ul>' +
+        problems.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>';
+    }
+    $('contentNotices').innerHTML = html;
+    const d = $('btnDownloadCfg');
+    if (d) d.addEventListener('click', () => {
+      download('tasks.js', buildTasksJs(), 'text/javascript;charset=utf-8');
+      toast('Downloaded. Replace tasks.js and reload: this notice will disappear.');
+    });
+    const x = $('btnDiscard');
+    if (x) x.addEventListener('click', () => {
+      if (!confirm('Content changes made in this browser will be lost. Continue?')) return;
+      CFG = clone(FROM_FILE); reindex(); saveDraft(); selected = null; render();
+    });
+  }
+
+  function renderProgress() {
+    const ts = cycleTasks(), c = cycle();
+    $('progress').innerHTML = CFG.blocks.map(b => {
+      const tb = ts.filter(t => t.block === b.id);
+      if (!tb.length) return '';
+      const n = tb.filter(t => c.done[t.id]).length;
+      return '<div class="bar"><div class="t"><span>' + esc(b.name) + '</span><span>' + n + ' of ' + tb.length + '</span></div>' +
+        '<div class="track"><i style="width:' + Math.round(100 * n / tb.length) + '%"></i></div></div>';
+    }).join('');
+  }
+
+  function renderWaits() {
+    const c = cycle();
+    const used = new Set();
+    cycleTasks().forEach(t => (t.waitsFor || []).forEach(w => used.add(w)));
+    const ws = (CFG.waits || []).filter(w => used.has(w.id));
+    $('waitList').innerHTML = ws.map(w => {
+      const f = c.waits[w.id];
+      return '<label class="wait' + (f ? ' on' : '') + '"><input type="checkbox" data-wait="' + esc(w.id) + '"' + (f ? ' checked' : '') + '>' +
+        '<span>' + esc(w.name) + '</span>' + (f ? '<small>' + fmtDate(f) + '</small>' : '') + '</label>';
+    }).join('') || '<span class="empty">Nothing to wait for in this cycle.</span>';
+    $('waitList').querySelectorAll('input[data-wait]').forEach(inp => inp.addEventListener('change', () => {
+      const before = snapshot();
+      if (inp.checked) cycle().waits[inp.dataset.wait] = todayISO(); else delete cycle().waits[inp.dataset.wait];
+      save(); render(); announceUnlocks(before);
+    }));
+  }
+
+  function passes(st) {
+    if (filter === 'all') return true;
+    if (filter === 'done') return st === 'done';
+    if (filter === 'available') return st === 'available' || st === 'warn';
+    return st !== 'done';
+  }
+
+  function renderList() {
+    let html;
+    if (editing) {
+      html = CFG.blocks.map(b => {
+        const tb = CFG.tasks.filter(t => t.block === b.id);
+        return '<div class="group"><h3><span>' + esc(b.name) + '</span><span>' + tb.length + '</span></h3>' +
+          tb.map(t => '<button type="button" class="item" data-id="' + esc(t.id) + '"' + (selected === t.id ? ' aria-current="true"' : '') + '>' +
+            '<span class="id">' + esc(t.id) + '</span><span class="name">' + esc(t.name || '(no name)') + '</span>' +
+            '<span class="chip available">' + (FREQ_NAME[t.frequency] || '?') + '</span></button>').join('') + '</div>';
+      }).join('');
+      const orphans = CFG.tasks.filter(t => !CFG.blocks.some(b => b.id === t.block));
+      if (orphans.length) html += '<div class="group"><h3><span>No valid block</span></h3>' + orphans.map(t =>
+        '<button type="button" class="item" data-id="' + esc(t.id) + '"><span class="id">' + esc(t.id) + '</span><span class="name">' + esc(t.name) + '</span><span></span></button>').join('') + '</div>';
+    } else {
+      const ts = cycleTasks();
+      html = CFG.blocks.map(b => {
+        const tb = ts.filter(t => t.block === b.id).map(t => ({ t, s: statusOf(t) })).filter(x => passes(x.s.st));
+        if (!tb.length) return '';
+        return '<div class="group"><h3><span>' + esc(b.name) + '</span><span>' + tb.length + '</span></h3>' +
+          tb.map(({ t, s }) => {
+            const why = s.st === 'blocked' ? s.reasons[0] + (s.reasons.length > 1 ? ' (+' + (s.reasons.length - 1) + ' more)' : '')
+              : s.st === 'warn' ? s.warnings[0]
+              : s.st === 'done' ? 'Done on ' + fmtDate(cycle().done[t.id].date) : '';
+            return '<button type="button" class="item ' + s.st + '" data-id="' + esc(t.id) + '"' + (selected === t.id ? ' aria-current="true"' : '') + '>' +
+              '<span class="id">' + esc(t.id) + '</span><span class="name">' + esc(t.name) + '</span>' +
+              '<span class="chip ' + s.st + '">' + STATUS_NAME[s.st] + '</span>' +
+              (why ? '<span class="reason">' + esc(why) + '</span>' : '') + '</button>';
+          }).join('') + '</div>';
+      }).join('');
+    }
+    $('groups').innerHTML = html || '<p class="empty">No tasks match this filter.</p>';
+    $('groups').querySelectorAll('.item').forEach(b => b.addEventListener('click', () => { selected = b.dataset.id; renderList(); renderDetail(); }));
+  }
+
+  function taskButtons(ids) {
+    return '<div class="related">' + ids.map(id => {
+      const t = byId[id]; if (!t) return '';
+      return '<button type="button" data-go="' + esc(id) + '">' + esc(id) + ' ' + esc(t.name) + ' (' + STATUS_NAME[statusOf(t).st].toLowerCase() + ')</button>';
+    }).join('') + '</div>';
+  }
+
+  function renderDetail() {
+    if (editing) {
+      if (selected && byId[selected]) taskForm(byId[selected]); else settingsForm();
+      return;
+    }
+    const box = $('detail');
+    const t = selected && byId[selected];
+    if (!t || !applies(t)) {
+      box.innerHTML = '<h2>Pick a task</h2><p class="summary">Select a task to see what is blocking it, how to do it and what it unlocks once done.</p>' +
+        '<p class="summary meta">Quarterly tasks only appear in ' + (CFG.quarterlyMonths || []).map(m => MONTHS[m - 1]).join(', ') +
+        '; year-end tasks in ' + (CFG.yearEndMonths || []).map(m => MONTHS[m - 1]).join(' and ') + '.</p>';
+      return;
+    }
+    const c = cycle(), s = statusOf(t), done = c.done[t.id];
+    const block = (CFG.blocks.find(b => b.id === t.block) || {}).name || '';
+    const next = unlocks(t.id).map(x => x.id);
+    let html = '<div class="head"><span class="id">' + esc(t.id) + '</span><h2>' + esc(t.name) + '</h2></div>' +
+      '<p class="meta">' + esc(block) + '. ' + (FREQ_NAME[t.frequency] || '') + (t.startDay ? '. From day ' + t.startDay : '') + '.</p>';
+
+    html += '<div class="actions-box">';
+    if (done) {
+      html += '<span class="chip done">Done</span><label for="doneDate">Date</label><input type="date" id="doneDate" value="' + esc(done.date) + '">' +
+        '<button type="button" class="quiet small" id="undo">Mark as not done</button>';
+    } else {
+      html += '<span class="chip ' + s.st + '">' + STATUS_NAME[s.st] + '</span><button type="button" id="markDone">Mark as done</button>';
+    }
+    html += '</div>';
+    if (s.reasons.length || s.warnings.length) {
+      html += '<ul class="reasons">' + s.reasons.map(m => '<li>' + esc(m) + '</li>').join('') +
+        s.warnings.map(m => '<li class="warn">' + esc(m) + '</li>').join('') + '</ul>';
+    }
+    if (t.summary) html += '<div class="section"><h3>What it is</h3><p class="summary">' + esc(t.summary) + '</p></div>';
+    if (t.steps && t.steps.length) html += '<div class="section"><h3>How to do it</h3><ol class="steps">' + t.steps.map(x => '<li>' + esc(x) + '</li>').join('') + '</ol></div>';
+    else html += '<div class="section"><h3>How to do it</h3><p class="pending">No guide yet. Add one with “Edit content”.</p></div>';
+    if (t.watchOut && t.watchOut.length) html += '<div class="section"><h3>Watch out for</h3><ul class="watch">' + t.watchOut.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>';
+
+    html += '<div class="section"><h3>Video</h3>' + (t.video
+      ? '<video controls preload="metadata" src="videos/' + esc(t.video) + '"></video><p class="pending" id="vidErr" hidden>videos/' + esc(t.video) + ' was not found.</p>'
+      : '<p class="pending">No video yet. Record your screen next time you do the task, save it in the videos/ folder and add its file name with “Edit content”.</p>') + '</div>';
+
+    const before = (t.dependsOn || []).concat(t.recommended || []);
+    if (before.length || (t.waitsFor || []).length) {
+      html += '<div class="section"><h3>Before you start</h3>';
+      if (before.length) html += taskButtons(before);
+      if ((t.waitsFor || []).length) html += '<ul class="watch">' + t.waitsFor.map(x => '<li>Waiting on others: ' + esc(waitById[x] ? waitById[x].name : x) + (c.waits[x] ? ' (received ' + fmtDate(c.waits[x]) + ')' : '') + '</li>').join('') + '</ul>';
+      html += '</div>';
+    }
+    if (t.onCompletion || next.length) {
+      html += '<div class="section"><h3>When you finish</h3>';
+      if (t.onCompletion) html += '<p class="summary">' + esc(t.onCompletion) + '.</p>';
+      if (next.length) html += '<p class="meta">Unlocks:</p>' + taskButtons(next);
+      html += '</div>';
+    }
+    const res = t.resources || [];
+    if (res.length) {
+      html += '<div class="section"><h3>Files and folders</h3>' + res.map((r, i) =>
+        '<div class="resource"><strong>' + esc(r.name) + '</strong><button type="button" class="quiet small" data-copy="' + i + '">Copy location</button><code>' + esc(r.location) + '</code></div>').join('') + '</div>';
+    }
+    html += '<div class="section"><h3>Notes for this cycle</h3><textarea class="note" id="note" rows="3" placeholder="Issues, delays, decisions…">' + esc(c.notes[t.id] || '') + '</textarea></div>';
+    box.innerHTML = html;
+
+    const bDone = $('markDone');
+    if (bDone) bDone.addEventListener('click', () => {
+      if (s.st === 'blocked' && !confirm('This task is blocked:\n- ' + s.reasons.join('\n- ') + '\n\nMark it as done anyway?')) return;
+      const snap = snapshot();
+      cycle().done[t.id] = { date: todayISO() };
+      save(); render(); announceUnlocks(snap);
+    });
+    const bUndo = $('undo');
+    if (bUndo) bUndo.addEventListener('click', () => { delete cycle().done[t.id]; save(); render(); });
+    const dd = $('doneDate');
+    if (dd) dd.addEventListener('change', () => { if (dd.value) { cycle().done[t.id].date = dd.value; save(); renderList(); } });
+    $('note').addEventListener('input', ev => { const v = ev.target.value; if (v) cycle().notes[t.id] = v; else delete cycle().notes[t.id]; save(); });
+    box.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { selected = b.dataset.go; renderList(); renderDetail(); }));
+    box.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => copy(res[+b.dataset.copy].location)));
+    const vid = box.querySelector('video');
+    if (vid) vid.addEventListener('error', () => { vid.hidden = true; $('vidErr').hidden = false; });
+  }
+
+  // ============================ Editor ============================
+  function touched() { saveDraft(); reindex(); renderNotices(); renderList(); }
+
+  const lines = txt => String(txt || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+
+  function taskChecks(t, field) {
+    const ticked = new Set(t[field] || []);
+    return '<div class="checks">' + CFG.blocks.map(b => {
+      const tb = CFG.tasks.filter(x => x.block === b.id && x.id !== t.id);
+      if (!tb.length) return '';
+      return '<div class="grp">' + esc(b.name) + '</div>' + tb.map(x =>
+        '<label><input type="checkbox" data-field="' + field + '" value="' + esc(x.id) + '"' + (ticked.has(x.id) ? ' checked' : '') + '>' +
+        '<span>' + esc(x.id) + ' ' + esc(x.name) + '</span></label>').join('');
+    }).join('') + '</div>';
+  }
+
+  function taskForm(t) {
+    const box = $('detail');
+    const waitTicked = new Set(t.waitsFor || []);
+    box.innerHTML =
+      '<div class="head"><span class="id">' + esc(t.id) + '</span><h2>Edit task</h2></div>' +
+      '<p class="meta">Changes apply straight away in this browser. When you are done, download the new tasks.js (notice at the top).</p>' +
+      '<div class="form">' +
+      '<div class="row">' +
+        '<div class="field"><label for="f_id">Id</label><input type="text" id="f_id" value="' + esc(t.id) + '" maxlength="8"><span class="help">Renaming updates every dependency.</span></div>' +
+        '<div class="field"><label for="f_block">Block</label><select id="f_block">' + CFG.blocks.map(b => '<option value="' + esc(b.id) + '"' + (b.id === t.block ? ' selected' : '') + '>' + esc(b.name) + '</option>').join('') + '</select></div>' +
+        '<div class="field"><label for="f_freq">Frequency</label><select id="f_freq">' + Object.keys(FREQ_NAME).map(k => '<option value="' + k + '"' + (k === t.frequency ? ' selected' : '') + '>' + FREQ_NAME[k] + '</option>').join('') + '</select></div>' +
+        '<div class="field"><label for="f_day">From day</label><input type="number" id="f_day" min="1" max="31" value="' + (t.startDay || '') + '"><span class="help">Leave empty if there is no earliest day.</span></div>' +
+      '</div>' +
+      '<div class="field"><label for="f_name">Name</label><input type="text" id="f_name" value="' + esc(t.name) + '"></div>' +
+      '<div class="field"><label for="f_summary">What it is</label><textarea id="f_summary" rows="2">' + esc(t.summary) + '</textarea></div>' +
+      '<div class="field"><label for="f_steps">How to do it</label><textarea id="f_steps" rows="8">' + esc((t.steps || []).join('\n')) + '</textarea><span class="help">One step per line, in order.</span></div>' +
+      '<div class="field"><label for="f_watch">Watch out for</label><textarea id="f_watch" rows="4">' + esc((t.watchOut || []).join('\n')) + '</textarea><span class="help">One warning per line.</span></div>' +
+      '<div class="field"><span class="label">Depends on (blocking)</span>' + taskChecks(t, 'dependsOn') + '</div>' +
+      '<div class="field"><span class="label">Better after (warns, does not block)</span>' + taskChecks(t, 'recommended') + '</div>' +
+      '<div class="field"><span class="label">Waiting on others</span><div class="checks">' + (CFG.waits || []).map(w =>
+        '<label><input type="checkbox" data-field="waitsFor" value="' + esc(w.id) + '"' + (waitTicked.has(w.id) ? ' checked' : '') + '><span>' + esc(w.name) + '</span></label>').join('') +
+        '</div><span class="help">To create a new wait, go to “Settings and waits”.</span></div>' +
+      '<div class="field"><label for="f_end">When you finish</label><input type="text" id="f_end" value="' + esc(t.onCompletion) + '"><span class="help">Who to tell or what to send. Leave empty if nothing.</span></div>' +
+      '<div class="field"><label for="f_res">Files and folders</label><textarea id="f_res" rows="3">' + esc((t.resources || []).map(r => r.name + ' | ' + r.location).join('\n')) + '</textarea><span class="help">One per line: name | location.</span></div>' +
+      '<div class="field"><label for="f_video">Video</label><input type="text" id="f_video" value="' + esc(t.video) + '" placeholder="A01.mp4"><span class="help">File name inside the videos/ folder.</span></div>' +
+      '<div class="actions-box">' +
+        '<button type="button" class="quiet small" id="f_up">Move up</button>' +
+        '<button type="button" class="quiet small" id="f_down">Move down</button>' +
+        '<button type="button" class="quiet small" id="f_dup">Duplicate task</button>' +
+        '<button type="button" class="small danger" id="f_del">Delete task</button>' +
+      '</div></div>';
+
+    const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
+    const text = (id, field, transform) => on(id, 'input', ev => {
+      const v = transform ? transform(ev.target.value) : ev.target.value;
+      if (v === '' || v == null || (Array.isArray(v) && !v.length && field !== 'steps' && field !== 'watchOut')) delete t[field]; else t[field] = v;
+      touched();
+    });
+    text('f_name', 'name');
+    text('f_summary', 'summary');
+    text('f_steps', 'steps', lines);
+    text('f_watch', 'watchOut', lines);
+    text('f_end', 'onCompletion', v => v.trim());
+    text('f_video', 'video', v => v.trim());
+    text('f_res', 'resources', v => lines(v).map(l => { const i = l.indexOf('|'); return i < 0 ? { name: 'Folder', location: l } : { name: l.slice(0, i).trim(), location: l.slice(i + 1).trim() }; }));
+    on('f_day', 'input', ev => { const n = parseInt(ev.target.value, 10); if (n >= 1 && n <= 31) t.startDay = n; else delete t.startDay; touched(); });
+    on('f_block', 'change', ev => { t.block = ev.target.value; touched(); });
+    on('f_freq', 'change', ev => { t.frequency = ev.target.value; touched(); });
+    box.querySelectorAll('input[data-field]').forEach(cb => cb.addEventListener('change', () => {
+      const field = cb.dataset.field;
+      const set = new Set(t[field] || []);
+      if (cb.checked) set.add(cb.value); else set.delete(cb.value);
+      t[field] = (field === 'waitsFor' ? (CFG.waits || []).map(w => w.id) : CFG.tasks.map(x => x.id)).filter(id => set.has(id));
+      touched();
+    }));
+    on('f_id', 'change', ev => {
+      const fresh = ev.target.value.trim().toUpperCase();
+      if (!fresh || fresh === t.id) { ev.target.value = t.id; return; }
+      if (byId[fresh]) { toast('There is already a task with id ' + fresh + '.'); ev.target.value = t.id; return; }
+      renameTask(t.id, fresh); selected = fresh; touched(); renderDetail();
+    });
+    on('f_up', 'click', () => move(t, -1));
+    on('f_down', 'click', () => move(t, 1));
+    on('f_dup', 'click', () => {
+      const copyOf = clone(t); copyOf.id = freeId(t.block); copyOf.name = t.name + ' (copy)';
+      CFG.tasks.splice(CFG.tasks.indexOf(t) + 1, 0, copyOf);
+      selected = copyOf.id; touched(); renderDetail();
+    });
+    on('f_del', 'click', () => {
+      const users = CFG.tasks.filter(x => (x.dependsOn || []).includes(t.id) || (x.recommended || []).includes(t.id)).map(x => x.id);
+      if (!confirm('Delete ' + t.id + ' ' + t.name + '?' + (users.length ? '\nIt will also be removed from the dependencies of: ' + users.join(', ') + '.' : ''))) return;
+      CFG.tasks.forEach(x => ['dependsOn', 'recommended'].forEach(k => { if (x[k]) x[k] = x[k].filter(d => d !== t.id); }));
+      CFG.tasks.splice(CFG.tasks.indexOf(t), 1);
+      selected = null; touched(); renderDetail();
+    });
+  }
+
+  function renameTask(oldId, newId) {
+    CFG.tasks.forEach(x => {
+      if (x.id === oldId) x.id = newId;
+      ['dependsOn', 'recommended'].forEach(k => { if (x[k]) x[k] = x[k].map(d => d === oldId ? newId : d); });
+    });
+    Object.values(state.cycles).forEach(c => ['done', 'notes'].forEach(k => {
+      if (c[k] && c[k][oldId] !== undefined) { c[k][newId] = c[k][oldId]; delete c[k][oldId]; }
+    }));
+    save();
+  }
+  function freeId(block) {
+    let n = 1;
+    CFG.tasks.forEach(x => { const m = new RegExp('^' + block + '(\\d+)$').exec(x.id); if (m) n = Math.max(n, +m[1] + 1); });
+    return block + pad(n);
+  }
+  function move(t, dir) {
+    const same = CFG.tasks.filter(x => x.block === t.block);
+    const other = same[same.indexOf(t) + dir];
+    if (!other) return;
+    const a = CFG.tasks.indexOf(t), b = CFG.tasks.indexOf(other);
+    CFG.tasks[a] = other; CFG.tasks[b] = t;
+    touched();
+  }
+
+  function settingsForm() {
+    const box = $('detail');
+    const months = field => '<div class="months">' + MONTHS.map((m, i) =>
+      '<label><input type="checkbox" data-month="' + field + '" value="' + (i + 1) + '"' + ((CFG[field] || []).includes(i + 1) ? ' checked' : '') + '>' + m.slice(0, 3) + '</label>').join('') + '</div>';
+    box.innerHTML =
+      '<h2>Settings and waits</h2>' +
+      '<p class="meta">Pick a task in the list to edit it, or use “Add task”.</p>' +
+      '<div class="form">' +
+      '<div class="field"><label for="s_title">Tracker title</label><input type="text" id="s_title" value="' + esc(CFG.title) + '"></div>' +
+      '<div class="field"><span class="label">Months with quarterly tasks</span>' + months('quarterlyMonths') + '</div>' +
+      '<div class="field"><span class="label">Months with year-end tasks</span>' + months('yearEndMonths') + '</div>' +
+      '<div class="field"><span class="label">Block names</span><div class="row">' + CFG.blocks.map((b, i) =>
+        '<input type="text" data-block="' + i + '" value="' + esc(b.name) + '" aria-label="Name of block ' + esc(b.id) + '">').join('') + '</div></div>' +
+      '<div class="field"><span class="label">Waiting on others</span><div>' + (CFG.waits || []).map((w, i) =>
+        '<div class="wait-row"><input type="text" data-wait-name="' + i + '" value="' + esc(w.name) + '" aria-label="Name of wait ' + esc(w.id) + '">' +
+        '<button type="button" class="small danger" data-wait-del="' + i + '">Delete</button></div>').join('') +
+        '</div><button type="button" class="quiet small" id="s_newWait">Add wait</button></div>' +
+      '</div>';
+
+    $('s_title').addEventListener('input', ev => { CFG.title = ev.target.value; touched(); $('title').textContent = CFG.title; });
+    box.querySelectorAll('input[data-month]').forEach(cb => cb.addEventListener('change', () => {
+      const field = cb.dataset.month;
+      CFG[field] = [...box.querySelectorAll('input[data-month="' + field + '"]:checked')].map(x => +x.value);
+      touched();
+    }));
+    box.querySelectorAll('input[data-block]').forEach(inp => inp.addEventListener('input', () => { CFG.blocks[+inp.dataset.block].name = inp.value; touched(); }));
+    box.querySelectorAll('input[data-wait-name]').forEach(inp => inp.addEventListener('input', () => { CFG.waits[+inp.dataset.waitName].name = inp.value; touched(); }));
+    box.querySelectorAll('[data-wait-del]').forEach(b => b.addEventListener('click', () => {
+      const w = CFG.waits[+b.dataset.waitDel];
+      const users = CFG.tasks.filter(t => (t.waitsFor || []).includes(w.id)).map(t => t.id);
+      if (!confirm('Delete the wait “' + w.name + '”?' + (users.length ? '\nIt will be removed from: ' + users.join(', ') + '.' : ''))) return;
+      CFG.tasks.forEach(t => { if (t.waitsFor) t.waitsFor = t.waitsFor.filter(x => x !== w.id); });
+      CFG.waits.splice(+b.dataset.waitDel, 1);
+      touched(); settingsForm();
+    }));
+    $('s_newWait').addEventListener('click', () => {
+      CFG.waits = CFG.waits || [];
+      let n = CFG.waits.length + 1, id;
+      do { id = 'W' + pad(n++); } while (CFG.waits.some(w => w.id === id));
+      CFG.waits.push({ id, name: 'New wait' });
+      touched(); settingsForm();
+      const inputs = box.querySelectorAll('input[data-wait-name]'); const last = inputs[inputs.length - 1]; if (last) { last.focus(); last.select(); }
+    });
+  }
+
+  // Builds a valid, readable tasks.js from the current content.
+  const PATH_KEYS = new Set(['location']);
+  function serialise(v, ind, key) {
+    const sp = '  '.repeat(ind), sp1 = '  '.repeat(ind + 1);
+    if (v === null || v === undefined) return 'null';
+    if (typeof v === 'string') {
+      if (PATH_KEYS.has(key) && v.includes('\\') && !/`|\$\{/.test(v) && !/\\$/.test(v)) return 'String.raw`' + v + '`';
+      return JSON.stringify(v);
+    }
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (Array.isArray(v)) {
+      if (!v.length) return '[]';
+      if (v.every(x => typeof x !== 'object' && String(x).length < 14)) return '[' + v.map(x => JSON.stringify(x)).join(', ') + ']';
+      return '[\n' + v.map(x => sp1 + serialise(x, ind + 1)).join(',\n') + '\n' + sp + ']';
+    }
+    const ks = Object.keys(v).filter(k => v[k] !== undefined);
+    if (!ks.length) return '{}';
+    return '{\n' + ks.map(k => sp1 + (/^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k)) + ': ' + serialise(v[k], ind + 1, k)).join(',\n') + '\n' + sp + '}';
+  }
+  function buildTasksJs() {
+    return '/* =====================================================================\n' +
+      '   MONTHLY CLOSE TRACKER - CONTENT\n' +
+      '   Generated from the tracker on ' + fmtDate(todayISO()) + '.\n\n' +
+      '   The safe way to change it is from the tracker itself:\n' +
+      '   "Edit content" > make changes > "Download tasks.js" > replace this file.\n' +
+      '   ===================================================================== */\n\n' +
+      'window.TRACKER = ' + serialise(CFG, 0) + ';\n';
+  }
+
+  // ======================= Unlocks and utilities =======================
+  function snapshot() { const r = {}; cycleTasks().forEach(t => { r[t.id] = statusOf(t).st; }); return r; }
+  function announceUnlocks(before) {
+    const fresh = cycleTasks().filter(t => before[t.id] === 'blocked' && statusOf(t).st !== 'blocked' && statusOf(t).st !== 'done');
+    if (fresh.length) toast('Unlocked: ' + fresh.map(t => t.id + ' ' + t.name).join('; '));
+  }
+  let toastTimer;
+  function toast(txt) {
+    const a = $('toast'); a.textContent = txt; a.classList.add('on');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => a.classList.remove('on'), 6000);
+  }
+  async function copy(txt) {
+    let ok = false;
+    try { await navigator.clipboard.writeText(txt); ok = true; } catch (e) {
+      const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select();
+      try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+      ta.remove();
+    }
+    toast(ok ? 'Location copied.' : 'Could not copy: select the text and copy it by hand.');
+  }
+  function download(name, content, type) {
+    const url = URL.createObjectURL(new Blob([content], { type }));
+    const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
+  }
+
+  // ============================ Events ============================
+  $('month').addEventListener('change', () => { if ($('month').value) { cycleId = $('month').value; render(); } });
+  $('thisMonth').addEventListener('click', () => { cycleId = currentMonth(); render(); });
+  $('btnEdit').addEventListener('click', () => {
+    editing = !editing;
+    if (editing && selected && !byId[selected]) selected = null;
+    render();
+  });
+  $('btnNew').addEventListener('click', () => {
+    const block = (selected && byId[selected]) ? byId[selected].block : CFG.blocks[0].id;
+    const t = { id: freeId(block), block, name: 'New task', frequency: 'monthly', dependsOn: [], recommended: [], waitsFor: [], summary: '', steps: [], watchOut: [], resources: [], video: '' };
+    let pos = -1; CFG.tasks.forEach((x, i) => { if (x.block === block) pos = i; });
+    CFG.tasks.splice(pos + 1, 0, t);
+    selected = t.id; touched(); renderDetail();
+    $('f_name').focus(); $('f_name').select();
+  });
+  $('btnSettings').addEventListener('click', () => { selected = null; renderList(); renderDetail(); });
+  document.querySelectorAll('#filters button').forEach(b => b.addEventListener('click', () => {
+    filter = b.dataset.f;
+    document.querySelectorAll('#filters button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    renderList();
+  }));
+  $('expJson').addEventListener('click', () => download('tracker-backup-' + todayISO() + '.json', JSON.stringify(state, null, 2), 'application/json'));
+  $('impJson').addEventListener('click', () => $('file').click());
+  $('file').addEventListener('change', ev => {
+    const f = ev.target.files[0]; if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const d = JSON.parse(reader.result);
+        if (!d || typeof d.cycles !== 'object') throw new Error('format');
+        if (!confirm('Everything recorded in this browser will be replaced by the backup. Continue?')) return;
+        state = d; save(); render(); toast('Backup restored.');
+      } catch (e) { toast('That file is not a tracker backup.'); }
+      ev.target.value = '';
+    };
+    reader.readAsText(f);
+  });
+  $('expCsv').addEventListener('click', () => {
+    const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+    const rows = [['cycle', 'type', 'id', 'name', 'date', 'note'].join(',')];
+    Object.keys(state.cycles).sort().forEach(cid => {
+      const c = state.cycles[cid];
+      Object.entries(c.waits || {}).forEach(([id, d]) => rows.push([cid, 'wait', id, q(waitById[id] ? waitById[id].name : id), d, ''].join(',')));
+      Object.entries(c.done || {}).forEach(([id, d]) => rows.push([cid, 'task', id, q(byId[id] ? byId[id].name : id), d.date, q((c.notes || {})[id])].join(',')));
+    });
+    download('tracker-log-' + todayISO() + '.csv', '\ufeff' + rows.join('\r\n'), 'text/csv;charset=utf-8');
+  });
+  $('clearCycle').addEventListener('click', () => {
+    if (!confirm('Delete everything recorded for the ' + cycleName(cycleId) + '?')) return;
+    delete state.cycles[cycleId]; save(); render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
